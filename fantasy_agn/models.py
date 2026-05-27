@@ -702,14 +702,27 @@ class Voigt(model.RegriddableModel1D):
         # legacy behavior (amplitude as integrated flux).
         self.normalize_peak = True
 
+        # Import wofz once per instance to avoid repeated imports inside
+        # `calc()` during tight fitting loops. If scipy isn't available at
+        # construction time we allow `calc()` to perform the import lazily.
+        try:
+            from scipy.special import wofz as _wofz
+        except Exception:
+            _wofz = None
+        self._wofz = _wofz
+
         model.RegriddableModel1D.__init__(
             self, name, (self.amplitude, self.pos, self.offset, self.fwhm_g, self.fwhm_l)
         )
 
     def calc(self, pars, x, *args, **kwargs):
         """Evaluate the Voigt model using Faddeeva function"""
-        from scipy.special import wofz
-        
+        # reuse per-instance import if available, otherwise import lazily
+        _wofz = getattr(self, "_wofz", None)
+        if _wofz is None:
+            from scipy.special import wofz as _wofz
+            self._wofz = _wofz
+
         (amplitude, pos, offset, fwhm_g, fwhm_l) = pars
         c = 299792.458
 
@@ -722,14 +735,14 @@ class Voigt(model.RegriddableModel1D):
         
         # Voigt profile using Faddeeva function
         z = ((x - center) + 1j * gamma_l) / (sigma_g * np.sqrt(2))
-        voigt = np.real(wofz(z)) / (sigma_g * np.sqrt(2 * np.pi))
+        voigt = np.real(_wofz(z)) / (sigma_g * np.sqrt(2 * np.pi))
         # If requested, scale the profile so that `amplitude` equals the
         # peak (maximum) value of the Voigt profile. This keeps the
         # historical behavior (amplitude as multiplicative factor) by default.
         if getattr(self, "normalize_peak", False):
             # compute analytic peak at x == center
             z0 = (1j * gamma_l) / (sigma_g * np.sqrt(2))
-            peak = np.real(wofz(z0)) / (sigma_g * np.sqrt(2 * np.pi))
+            peak = np.real(_wofz(z0)) / (sigma_g * np.sqrt(2 * np.pi))
             if peak == 0 or not np.isfinite(peak):
                 return amplitude * voigt
             return amplitude * (voigt / peak)
