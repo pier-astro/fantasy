@@ -24,7 +24,11 @@ __all__ = (
     "create_lorentz_line",
     "create_voigt_line",
     "Lorentz",
-    "Voigt"
+    "Voigt",
+    # Expose Gaussian line classes for direct instantiation
+    "Emission_Line",
+    "Absorption_Line",
+    
     )
 script_dir = os.path.dirname(__file__)
 input_path = os.path.join(script_dir, "input")
@@ -404,7 +408,8 @@ def create_lorentz_line(name='lorentz', pos=4861, amplitude=5, min_amplitude=0, 
 
 def create_voigt_line(name='voigt', pos=4861, amplitude=5, min_amplitude=0, max_amplitude=500,
                       fwhm_g=100, fwhm_l=100, min_fwhm_g=5, max_fwhm_g=10000,
-                      min_fwhm_l=5, max_fwhm_l=10000, offset=0, min_offset=-3000, max_offset=3000):
+                      min_fwhm_l=5, max_fwhm_l=10000, offset=0, min_offset=-3000, max_offset=3000,
+                      normalize_peak=True):
     """
     Create a Voigt line profile with the specified parameters.
     
@@ -450,6 +455,7 @@ def create_voigt_line(name='voigt', pos=4861, amplitude=5, min_amplitude=0, max_
                  min_offset=min_offset, max_offset=max_offset,
                  min_fwhm_g=min_fwhm_g, max_fwhm_g=max_fwhm_g,
                  min_fwhm_l=min_fwhm_l, max_fwhm_l=max_fwhm_l)
+    line.normalize_peak = normalize_peak
     return line
     
 class Emission_Line(model.RegriddableModel1D):
@@ -655,8 +661,16 @@ class Voigt(model.RegriddableModel1D):
         Bounds for Gaussian FWHM in km/s
     min_fwhm_l, max_fwhm_l : float
         Bounds for Lorentzian FWHM in km/s
+    
+    Notes
+    -----
+    The `amplitude` parameter historically acted as a multiplicative scaling
+    factor on the Voigt profile (so it is not equal to the peak value). If you
+    would like `amplitude` to represent the peak height of the Voigt profile,
+    set the instance attribute `normalize_peak = True` (kept False by default
+    for backward compatibility).
     """
-    def __init__(self, name="voigt", amplitude=5, pos=4861, offset=0, 
+    def __init__(self, name="voigt", amplitude=5, pos=4861, offset=0,
                  fwhm_g=100, fwhm_l=100,
                  min_amplitude=0, max_amplitude=10000,
                  min_offset=-3000, max_offset=3000,
@@ -681,6 +695,13 @@ class Voigt(model.RegriddableModel1D):
         self.ampl = self.amplitude
         self.offs_kms = self.offset
 
+        # Option to interpret `amplitude` as the peak value of the Voigt
+        # profile (True) instead of a multiplicative scaling factor (False).
+        # Default is True for consistency with Gaussian/Lorentz definitions
+        # where `amplitude` is the peak value. Set to False to preserve
+        # legacy behavior (amplitude as integrated flux).
+        self.normalize_peak = True
+
         model.RegriddableModel1D.__init__(
             self, name, (self.amplitude, self.pos, self.offset, self.fwhm_g, self.fwhm_l)
         )
@@ -702,7 +723,17 @@ class Voigt(model.RegriddableModel1D):
         # Voigt profile using Faddeeva function
         z = ((x - center) + 1j * gamma_l) / (sigma_g * np.sqrt(2))
         voigt = np.real(wofz(z)) / (sigma_g * np.sqrt(2 * np.pi))
-        
+        # If requested, scale the profile so that `amplitude` equals the
+        # peak (maximum) value of the Voigt profile. This keeps the
+        # historical behavior (amplitude as multiplicative factor) by default.
+        if getattr(self, "normalize_peak", False):
+            # compute analytic peak at x == center
+            z0 = (1j * gamma_l) / (sigma_g * np.sqrt(2))
+            peak = np.real(wofz(z0)) / (sigma_g * np.sqrt(2 * np.pi))
+            if peak == 0 or not np.isfinite(peak):
+                return amplitude * voigt
+            return amplitude * (voigt / peak)
+
         return amplitude * voigt
 
 
@@ -1169,11 +1200,20 @@ def create_model(
                 max_fwhm=max_fwhm,
             )
     else:
+        # backward-compatible handling: some CSVs use 'ampl' instead of 'amplitude'
+        if "amplitude" in df.columns:
+            amp_col = "amplitude"
+        elif "ampl" in df.columns:
+            amp_col = "ampl"
+        else:
+            amp_col = None
+
         for i in range(len(df.line)):
+            amp_val = df[amp_col][i] if amp_col is not None else amplitude
             model += create_line(
                 name=prefix + "_" + df.line[i]+'_'+df.position[i].round(0).astype(int).astype(str),
                 pos=df.position[i],
-                amplitude=df.amplitude[i],
+                amplitude=amp_val,
                 fwhm=df.fwhm[i],
                 offset=df.offset[i],
                 max_offset=df.max_offset[i],
