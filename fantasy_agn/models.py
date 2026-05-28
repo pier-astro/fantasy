@@ -316,9 +316,26 @@ class UV_FeII(model.RegriddableModel1D):
         return _uv_feii(pars, x)
 
 
+def _resolve_legacy_line_kwargs(kwargs, amplitude, min_amplitude, max_amplitude, offset):
+    """Map legacy line keyword names onto the refactored API."""
+    if "ampl" in kwargs:
+        amplitude = kwargs.pop("ampl")
+    if "min_ampl" in kwargs:
+        min_amplitude = kwargs.pop("min_ampl")
+    if "max_ampl" in kwargs:
+        max_amplitude = kwargs.pop("max_ampl")
+    if "offs_kms" in kwargs:
+        offset = kwargs.pop("offs_kms")
+    if kwargs:
+        unexpected = ", ".join(sorted(kwargs))
+        raise TypeError(f"Unexpected keyword argument(s): {unexpected}")
+    return amplitude, min_amplitude, max_amplitude, offset
+
+
 
 def create_line(name='line', pos=4861, amplitude=5, min_amplitude=0, max_amplitude=500, 
-                fwhm=1000, min_fwhm=5, max_fwhm=10000, offset=0, min_offset=-3000, max_offset=3000):
+                fwhm=1000, min_fwhm=5, max_fwhm=10000, offset=0, min_offset=-3000, max_offset=3000,
+                **kwargs):
     """
     Create a Gaussian emission line with the specified parameters.
     
@@ -357,6 +374,9 @@ def create_line(name='line', pos=4861, amplitude=5, min_amplitude=0, max_amplitu
     This function provides backward compatibility with the original API.
     You can also directly instantiate Emission_Line, Lorentz, or Voigt classes.
     """
+    amplitude, min_amplitude, max_amplitude, offset = _resolve_legacy_line_kwargs(
+        kwargs, amplitude, min_amplitude, max_amplitude, offset
+    )
     line = Emission_Line(name=name, amplitude=amplitude, pos=pos, offset=offset, fwhm=fwhm,
                          min_amplitude=min_amplitude, max_amplitude=max_amplitude,
                          min_offset=min_offset, max_offset=max_offset,
@@ -365,7 +385,8 @@ def create_line(name='line', pos=4861, amplitude=5, min_amplitude=0, max_amplitu
 
 
 def create_lorentz_line(name='lorentz', pos=4861, amplitude=5, min_amplitude=0, max_amplitude=500,
-                        fwhm=100, min_fwhm=5, max_fwhm=10000, offset=0, min_offset=-3000, max_offset=3000):
+                        fwhm=100, min_fwhm=5, max_fwhm=10000, offset=0, min_offset=-3000, max_offset=3000,
+                        **kwargs):
     """
     Create a Lorentzian line with the specified parameters.
     
@@ -399,6 +420,9 @@ def create_lorentz_line(name='lorentz', pos=4861, amplitude=5, min_amplitude=0, 
     line : Lorentz
         An instance of the Lorentz class with specified parameters
     """
+    amplitude, min_amplitude, max_amplitude, offset = _resolve_legacy_line_kwargs(
+        kwargs, amplitude, min_amplitude, max_amplitude, offset
+    )
     line = Lorentz(name=name, amplitude=amplitude, pos=pos, offset=offset, fwhm=fwhm,
                    min_amplitude=min_amplitude, max_amplitude=max_amplitude,
                    min_offset=min_offset, max_offset=max_offset,
@@ -409,7 +433,7 @@ def create_lorentz_line(name='lorentz', pos=4861, amplitude=5, min_amplitude=0, 
 def create_voigt_line(name='voigt', pos=4861, amplitude=5, min_amplitude=0, max_amplitude=500,
                       fwhm_g=100, fwhm_l=100, min_fwhm_g=5, max_fwhm_g=10000,
                       min_fwhm_l=5, max_fwhm_l=10000, offset=0, min_offset=-3000, max_offset=3000,
-                      normalize_peak=True):
+                      normalize_peak=False, **kwargs):
     """
     Create a Voigt line profile with the specified parameters.
     
@@ -443,12 +467,18 @@ def create_voigt_line(name='voigt', pos=4861, amplitude=5, min_amplitude=0, max_
         Lower limit for velocity offset (default: -3000)
     max_offset : float
         Upper limit for velocity offset (default: 3000)
+    normalize_peak : bool
+        If True, normalize the profile so `amplitude` matches the peak value.
+        Defaults to False for backward compatibility.
     
     Returns
     -------
     line : Voigt
         An instance of the Voigt class with specified parameters
     """
+    amplitude, min_amplitude, max_amplitude, offset = _resolve_legacy_line_kwargs(
+        kwargs, amplitude, min_amplitude, max_amplitude, offset
+    )
     line = Voigt(name=name, amplitude=amplitude, pos=pos, offset=offset,
                  fwhm_g=fwhm_g, fwhm_l=fwhm_l,
                  min_amplitude=min_amplitude, max_amplitude=max_amplitude,
@@ -483,7 +513,10 @@ class Emission_Line(model.RegriddableModel1D):
     def __init__(self, name='line', amplitude=10, pos=4861, offset=0, fwhm=1000,
                  min_amplitude=0, max_amplitude=10000,
                  min_offset=-10000, max_offset=10000,
-                 min_fwhm=0, max_fwhm=10000):
+                 min_fwhm=0, max_fwhm=10000, **kwargs):
+        amplitude, min_amplitude, max_amplitude, offset = _resolve_legacy_line_kwargs(
+            kwargs, amplitude, min_amplitude, max_amplitude, offset
+        )
         self.amplitude = model.Parameter(name, "amplitude", amplitude, 
                                          min=min_amplitude, hard_min=0, max=max_amplitude)
         self.pos = model.Parameter(
@@ -539,7 +572,10 @@ class Absorption_Line(model.RegriddableModel1D):
     def __init__(self, name='line', amplitude=-10, pos=4861, offset=0, fwhm=1000,
                  min_amplitude=-10000, max_amplitude=0,
                  min_offset=-10000, max_offset=10000,
-                 min_fwhm=0, max_fwhm=10000):
+                 min_fwhm=0, max_fwhm=10000, **kwargs):
+        amplitude, min_amplitude, max_amplitude, offset = _resolve_legacy_line_kwargs(
+            kwargs, amplitude, min_amplitude, max_amplitude, offset
+        )
         self.amplitude = model.Parameter(name, "amplitude", amplitude, 
                                          min=min_amplitude, hard_min=-10000, max=max_amplitude)
         self.pos = model.Parameter(
@@ -601,7 +637,10 @@ class Lorentz(model.RegriddableModel1D):
     def __init__(self, name="lorentz", amplitude=5, pos=4861, offset=0, fwhm=100,
                  min_amplitude=0, max_amplitude=10000,
                  min_offset=-3000, max_offset=3000,
-                 min_fwhm=0, max_fwhm=10000):
+                 min_fwhm=0, max_fwhm=10000, **kwargs):
+        amplitude, min_amplitude, max_amplitude, offset = _resolve_legacy_line_kwargs(
+            kwargs, amplitude, min_amplitude, max_amplitude, offset
+        )
         self.amplitude = model.Parameter(name, "amplitude", amplitude, 
                                          min=min_amplitude, hard_min=0, max=max_amplitude)
         self.pos = model.Parameter(
@@ -664,18 +703,19 @@ class Voigt(model.RegriddableModel1D):
     
     Notes
     -----
-    The `amplitude` parameter historically acted as a multiplicative scaling
-    factor on the Voigt profile (so it is not equal to the peak value). If you
-    would like `amplitude` to represent the peak height of the Voigt profile,
-    set the instance attribute `normalize_peak = True` (kept False by default
-    for backward compatibility).
+    By default, `amplitude` acts as a multiplicative scaling factor on the
+    Voigt profile, so it is not equal to the peak value. Set
+    `normalize_peak = True` to force `amplitude` to represent the peak height.
     """
     def __init__(self, name="voigt", amplitude=5, pos=4861, offset=0,
                  fwhm_g=100, fwhm_l=100,
                  min_amplitude=0, max_amplitude=10000,
                  min_offset=-3000, max_offset=3000,
                  min_fwhm_g=0, max_fwhm_g=10000,
-                 min_fwhm_l=0, max_fwhm_l=10000):
+                 min_fwhm_l=0, max_fwhm_l=10000, **kwargs):
+        amplitude, min_amplitude, max_amplitude, offset = _resolve_legacy_line_kwargs(
+            kwargs, amplitude, min_amplitude, max_amplitude, offset
+        )
         self.amplitude = model.Parameter(name, "amplitude", amplitude, 
                                          min=min_amplitude, hard_min=0, max=max_amplitude)
         self.pos = model.Parameter(
@@ -697,10 +737,9 @@ class Voigt(model.RegriddableModel1D):
 
         # Option to interpret `amplitude` as the peak value of the Voigt
         # profile (True) instead of a multiplicative scaling factor (False).
-        # Default is True for consistency with Gaussian/Lorentz definitions
-        # where `amplitude` is the peak value. Set to False to preserve
-        # legacy behavior (amplitude as integrated flux).
-        self.normalize_peak = True
+        # Default is False to preserve the historical multiplicative scaling
+        # behavior.
+        self.normalize_peak = False
 
         # Import wofz once per instance to avoid repeated imports inside
         # `calc()` during tight fitting loops. If scipy isn't available at
